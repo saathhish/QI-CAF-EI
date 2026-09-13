@@ -1,0 +1,139 @@
+# ═══════════════════════════════════════════════════════════════════════════════
+# QI-CAF-EI Configuration
+# Quantum-Inspired Context-Aware Adaptive Federated Edge Intelligence
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# ─── Dataset Paths ────────────────────────────────────────────────────────────
+datasets:
+  mimic3:
+    path: "data/raw/mimic3"
+    processed: "data/processed/mimic3.pt"
+    use_synthetic: true           # Set false when real MIMIC-III is available
+    synthetic_n_samples: 20000
+    task: "mortality"             # binary classification
+    positive_rate: 0.115          # 11.5% mortality rate
+
+  physionet2012:
+    path: "data/raw/physionet2012"
+    processed: "data/processed/physionet2012.pt"
+    task: "mortality"
+    n_time_steps: 48              # 48-hour window
+    n_variables: 36               # time-series variables
+
+  chestxray14:
+    path: "data/raw/chestxray14"
+    processed: "data/processed/chestxray14.pt"
+    task: "multilabel"
+    n_classes: 14
+    img_size: 224
+    subset_fraction: 0.10         # use 10% for development; set 1.0 for full
+
+  uci_heart:
+    path: "data/raw/uci_heart"
+    processed: "data/processed/uci_heart.pt"
+    task: "binary"
+
+  wisdm:
+    path: "data/raw/wisdm"
+    processed: "data/processed/wisdm.pt"
+    task: "multiclass"
+    n_classes: 18
+    window_size: 200              # 10s at 20Hz
+    hop_size: 100                 # 50% overlap
+    lowcut_hz: 0.5
+    highcut_hz: 20.0
+    butterworth_order: 3
+
+# ─── Federated Learning ───────────────────────────────────────────────────────
+federated:
+  n_nodes: 20                     # Default: 20 nodes; also test 50, 100
+  global_rounds: 50
+  local_epochs: 3
+  local_batch_size: 32
+  active_fraction: 0.80           # q = 0.8 active clients per round
+  seed: 42
+
+# ─── Non-IID Partitioning ─────────────────────────────────────────────────────
+partition:
+  dirichlet_alpha: 0.5            # label skew: 0.1 (high) or 0.5 (moderate)
+  lognormal_mu: 0.0               # quantity skew mean (log scale)
+  lognormal_sigma2: 0.5           # quantity skew variance (log scale)
+  min_samples_per_node: 10        # floor to avoid degenerate nodes
+
+# ─── Quantum MPS Compression ──────────────────────────────────────────────────
+mps:
+  bond_rank_tabular: 4            # r=4 for tabular/sensor data
+  bond_rank_vision: 6             # r=6 for image data
+  n_cores: 4                      # number of MPS core tensors per layer
+  tt_svd_init: true               # initialize via TT-SVD (better than random)
+
+# ─── Differential Privacy ────────────────────────────────────────────────────
+privacy:
+  epsilon_base: 1.0               # base ε budget per round
+  epsilon_max: 10.0               # total ε budget (lifetime)
+  delta: 1.0e-5                   # δ for (ε,δ)-DP guarantee
+  clip_norm: 1.0                  # L2 gradient clipping bound C
+  accountant: "rdp"               # "rdp" or "moments"
+
+# ─── Context Controller ───────────────────────────────────────────────────────
+context:
+  gamma: 0.5                      # urgency amplification factor for ε scaling
+  # Simulated ranges for normalization (mins/maxs)
+  latency_min_ms: 5.0
+  latency_max_ms: 500.0
+  bandwidth_min_mbps: 0.5
+  bandwidth_max_mbps: 100.0
+  battery_min: 0.05
+  battery_max: 1.0
+  cpu_min: 0.0
+  cpu_max: 1.0
+
+# ─── Homomorphic Encryption ───────────────────────────────────────────────────
+he:
+  enabled: true                   # set false to use plaintext aggregation
+  scheme: "ckks"
+  poly_modulus_degree: 8192
+  coeff_mod_bit_sizes: [60, 40, 40, 60]
+  scale_bits: 40                  # 2^40 scale factor
+
+# ─── Explainability ──────────────────────────────────────────────────────────
+xai:
+  lambda_xai: 0.1                 # weight of L_XAI in total loss
+  n_background_samples: 50        # background samples for SHAP
+  explainer_type: "deep"          # "deep" for neural nets; "kernel" fallback
+  update_global_shap_every: 5     # rounds between global SHAP vector updates
+
+# ─── Backbones ────────────────────────────────────────────────────────────────
+backbones:
+  mlp:                            # MIMIC-III, UCI Heart
+    hidden_dims: [256, 128]
+    dropout: 0.3
+    activation: "relu"
+  bilstm:                         # PhysioNet 2012
+    hidden_size: 64
+    num_layers: 2
+    dropout: 0.2
+  resnet50:                       # ChestX-ray14
+    pretrained: true
+    freeze_backbone: true         # only fine-tune MPS-replaced FC layers
+  cnn1d:                          # WISDM
+    channels: [64, 128, 256]
+    kernel_size: 5
+    dropout: 0.2
+
+# ─── Optimizer ────────────────────────────────────────────────────────────────
+optimizer:
+  type: "adam"
+  lr: 0.001
+  weight_decay: 1.0e-4
+  scheduler: "cosine"             # "cosine" | "step" | "none"
+  warmup_rounds: 5
+
+# ─── Logging & Output ────────────────────────────────────────────────────────
+output:
+  log_dir: "logs/"
+  checkpoint_dir: "checkpoints/"
+  results_dir: "results/"
+  log_level: "INFO"
+  save_every_n_rounds: 10
+  plot_metrics: true
